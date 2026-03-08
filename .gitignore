@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Screenshots and outputs
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# Environment variables
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Browser profiles (tidak perlu di-deploy)
+browser_profiles/
+
+# Browser profiles (tidak perlu di-deploy)
+browser_profiles/

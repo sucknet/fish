@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🪂 Fogo Airdrop Checker - Check Your Allocation</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="airdrop-style.css">
+</head>
+<body>
+    <div class="donate-button" id="donateBtn" title="Click to copy donation address">
+        <span class="donate-icon">💰</span>
+        <span class="donate-text">Donate</span>
+    </div>
+    
+    <div class="back-button" id="backBtn" title="Back to dashboard">
+        <span class="back-icon">←</span>
+        <span class="back-text">Back to Dashboard</span>
+    </div>
+    
+    <div class="container">
+        <header class="header">
+            <h1>🪂 Fogo Airdrop Checker</h1>
+            <p class="subtitle">Check your Fogo airdrop allocation - Paste addresses below (one per line)</p>
+        </header>
+
+        <div class="checker-section">
+            <div class="input-section">
+                <div class="quick-actions">
+                    <button class="quick-action-btn" id="exampleBtn">
+                        <span class="quick-action-icon">📝</span>
+                        <span class="quick-action-text">Load Example</span>
+                    </button>
+                    <button class="quick-action-btn" id="clearBtn">
+                        <span class="quick-action-icon">🗑️</span>
+                        <span class="quick-action-text">Clear All</span>
+                    </button>
+                    <button class="quick-action-btn primary" id="pasteBtn">
+                        <span class="quick-action-icon">📋</span>
+                        <span class="quick-action-text">Paste from Clipboard</span>
+                    </button>
+                </div>
+                <textarea 
+                    id="addressesInput" 
+                    placeholder="Paste your Solana wallet addresses here (one per line)&#10;Example:&#10;4JV8JduEWiKZASJRAkHnyHCR7jVvp99vgjPoXxcssM7A&#10;85CbigB8Wihtg84inY5zKALyuWDKNUMcStYgtrdpjFuV&#10;..."
+                    class="addresses-input"
+                    rows="10"
+                ></textarea>
+                <button id="checkBtn" class="check-btn">
+                    <span class="btn-text">Check Allocation</span>
+                    <span class="btn-loader" style="display: none;">⏳</span>
+                </button>
+                <div id="errorMessage" class="error-message" style="display: none;"></div>
+            </div>
+
+            <div id="progressSection" class="progress-section" style="display: none;">
+                <div class="progress-info">
+                    <span id="progressText">Checking addresses...</span>
+                    <span id="progressCount">0 / 0</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <div id="summarySection" class="summary-section" style="display: none;">
+                <h2>📊 Summary</h2>
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-icon">📋</div>
+                        <div class="summary-info">
+                            <div class="summary-label">Total Checked</div>
+                            <div class="summary-value" id="totalChecked">0</div>
+                        </div>
+                    </div>
+                    <div class="summary-card success">
+                        <div class="summary-icon">✅</div>
+                        <div class="summary-info">
+                            <div class="summary-label">With Allocation</div>
+                            <div class="summary-value" id="totalWithAllocation">0</div>
+                        </div>
+                    </div>
+                    <div class="summary-card danger">
+                        <div class="summary-icon">❌</div>
+                        <div class="summary-info">
+                            <div class="summary-label">No Allocation</div>
+                            <div class="summary-value" id="totalNoAllocation">0</div>
+                        </div>
+                    </div>
+                    <div class="summary-card primary">
+                        <div class="summary-icon">💰</div>
+                        <div class="summary-info">
+                            <div class="summary-label">Total Allocation</div>
+                            <div class="summary-value" id="totalAllocationSum">0 FOGO</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="resultsSection" class="results-section" style="display: none;">
+                <h2>📋 Results</h2>
+                <div class="results-header">
+                    <button class="filter-btn active" id="filterAll">All</button>
+                    <button class="filter-btn" id="filterWithAllocation">With Allocation</button>
+                    <button class="filter-btn" id="filterNoAllocation">No Allocation</button>
+                    <button class="export-btn" id="exportBtn">📥 Export CSV</button>
+                </div>
+                <div class="results-table-container">
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Address</th>
+                                <th>Category</th>
+                                <th>Allocation</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsTableBody">
+                            <!-- Results will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="airdrop.js"></script>
+</body>
+</html>

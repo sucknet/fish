@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐟 Fogo Fishing Stats Dashboard - Real-time Fogo Fishing Statistics</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="donate-button" id="donateBtn" title="Click to copy donation address">
+        <span class="donate-icon">💰</span>
+        <span class="donate-text">Donate</span>
+    </div>
+    
+    <div class="s2-button" id="s2Btn" title="Click to go to S2 announcement">
+        <span class="s2-text">When S2 ? click here</span>
+    </div>
+    
+    <div class="container">
+        <header class="header">
+            <h1>🐟 Fogo Fishing Stats Dashboard</h1>
+            <p class="subtitle">Real-time Fogo Fishing blockchain statistics and predictions</p>
+        </header>
+
+        <div class="airdrop-banner">
+            <div class="airdrop-banner-content">
+                <div class="airdrop-banner-icon">🪂</div>
+                <div class="airdrop-banner-text">
+                    <div class="airdrop-banner-title">Check Your Fogo Airdrop Allocation</div>
+                    <div class="airdrop-banner-subtitle">Enter multiple addresses at once - No wallet connection required</div>
+                </div>
+            </div>
+            <button class="airdrop-banner-button" id="airdropBtn">
+                Check Airdrop →
+            </button>
+        </div>
+
+        <div class="search-section">
+            <div class="input-group">
+                <input 
+                    type="text" 
+                    id="addressInput" 
+                    placeholder="Enter Fogo wallet address..."
+                    class="address-input"
+                >
+                <button id="searchBtn" class="search-btn">
+                    <span class="btn-text">Search</span>
+                    <span class="btn-loader" style="display: none;">⏳</span>
+                </button>
+            </div>
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
+        </div>
+
+        <div id="loadingIndicator" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Fetching data from blockchain...</p>
+        </div>
+
+        <!-- Player-specific sections - Only shown when address is entered, positioned at the top -->
+        <div id="results" style="display: none;">
+            <!-- Account Status -->
+            <section class="card account-status" style="display: none;">
+                <h2>📊 Account Status</h2>
+                <div class="warning-banner" id="honeypotWarning" style="display: none;">
+                    <div class="warning-icon">⚠️</div>
+                    <div class="warning-content">
+                        <div class="warning-title">Flagged Account Warning</div>
+                        <div class="warning-message">This account has been flagged as a honeypot. Tokens may be burned on next process_fish transaction.</div>
+                    </div>
+                </div>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span class="label">Address:</span>
+                        <span class="value address-value" id="accountAddress"></span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Account Status:</span>
+                        <span class="value badge" id="accountStatus"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Player Stats -->
+            <section class="card player-stats" id="playerStatsSection" style="display: none;">
+                <h2>🎮 Player Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">🎣</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Rod Level</div>
+                            <div class="stat-value" id="rodLevel">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⛵</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Boat Tier</div>
+                            <div class="stat-value" id="boatTier">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🎲</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Cast Count</div>
+                            <div class="stat-value" id="castCount">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🐟</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Fish Caught</div>
+                            <div class="stat-value" id="fishCaught">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⚡</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Power</div>
+                            <div class="stat-value" id="power">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🔧</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Durability</div>
+                            <div class="stat-value" id="durability">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">💫</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Supercast Charges</div>
+                            <div class="stat-value" id="supercast">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🐠</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Unprocessed Fish</div>
+                            <div class="stat-value" id="unprocessedFish">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Fish Since Last Diff</div>
+                            <div class="stat-value" id="fishSinceDiff">-</div>
+                            <div id="fishSinceDiffNote" style="font-size:0.7rem;color:var(--text-secondary,#888);margin-top:3px;line-height:1.3">-</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="player-details">
+                    <h3>Additional Details</h3>
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Upgrade Progress:</span>
+                            <span class="detail-value" id="upgradeProgress">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Honeypot:</span>
+                            <span class="detail-value" id="honeypot">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">First Fee Paid:</span>
+                            <span class="detail-value" id="firstFeePaid">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">ATA Subsidy Used:</span>
+                            <span class="detail-value" id="ataSubsidy">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="fishing-estimation">
+                    <h3>📊 Estimated Fishing Income</h3>
+                    <div class="estimation-grid">
+                        <div class="estimation-card">
+                            <div class="estimation-icon">⏰</div>
+                            <div class="estimation-info">
+                                <div class="estimation-label">Per Hour</div>
+                                <div class="estimation-value" id="fishingEstimationPerHour">-</div>
+                            </div>
+                        </div>
+                        <div class="estimation-card">
+                            <div class="estimation-icon">🕐</div>
+                            <div class="estimation-info">
+                                <div class="estimation-label">Per 6 Hours</div>
+                                <div class="estimation-value" id="fishingEstimationPer6Hours">-</div>
+                            </div>
+                        </div>
+                        <div class="estimation-card">
+                            <div class="estimation-icon">🕑</div>
+                            <div class="estimation-info">
+                                <div class="estimation-label">Per 12 Hours</div>
+                                <div class="estimation-value" id="fishingEstimationPer12Hours">-</div>
+                            </div>
+                        </div>
+                        <div class="estimation-card">
+                            <div class="estimation-icon">📅</div>
+                            <div class="estimation-info">
+                                <div class="estimation-label">Per 24 Hours</div>
+                                <div class="estimation-value" id="fishingEstimationPer24Hours">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="estimation-note">
+                        <small>Note: Estimates are based on your average fish per cast and cooldown time. Actual results may vary based on difficulty changes and luck.</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Yield Info -->
+            <section class="card yield-section" id="yieldSection" style="display: none;">
+                <h2>💰 Yield Information</h2>
+                <div class="yield-grid">
+                    <div class="yield-card">
+                        <div class="yield-icon">💎</div>
+                        <div class="yield-card-info">
+                            <div class="yield-label">Unclaimed Yield</div>
+                            <div class="yield-value" id="unclaimedYield">-</div>
+                            <div class="yield-desc">Yield from processing fees</div>
+                        </div>
+                    </div>
+                    <div class="yield-card">
+                        <div class="yield-icon">🐠</div>
+                        <div class="yield-card-info">
+                            <div class="yield-label">Unprocessed Fish</div>
+                            <div class="yield-value" id="yieldUnprocessedFish">-</div>
+                            <div class="yield-desc">Earning yield</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="yield-details">
+                    <h3>Yield Details</h3>
+                    <div class="details-list">
+                        <div class="detail-row">
+                            <span class="detail-label">Fees Per Unprocessed Fish:</span>
+                            <span class="detail-value" id="feesPerUnprocessedFish">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Last Claim Fees Snapshot:</span>
+                            <span class="detail-value" id="lastClaimFeesSnapshot">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Yield Formula:</span>
+                            <span class="detail-value formula">(Current Fees - Last Claim) × Unprocessed Fish</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Referrer Info -->
+            <section class="card referrer-info" id="referrerSection" style="display: none;">
+                <h2>🤝 Referrer Information</h2>
+                <div class="referrer-details">
+                    <div class="referrer-item">
+                        <span class="label">Referrer Address:</span>
+                        <span class="value address-value" id="referrerAddress"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- NFT Config -->
+            <section class="card" id="nftSection" style="display: none;">
+                <h2>🪪 NFT Status</h2>
+                <div class="status-row">
+                    <span class="status-label">System</span>
+                    <span class="status-pill" id="nftActive">-</span>
+                    <span class="status-label">Collection</span>
+                    <span class="mono" id="nftCollection">-</span>
+                </div>
+                <div class="stats-grid small-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">🧮</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Total Minted</div>
+                            <div class="stat-value" id="nftTotalMinted">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Active Supply</div>
+                            <div class="stat-value" id="nftActiveSupply">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🔢</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Grid Slots</div>
+                            <div class="stat-value" id="nftGridSlots">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🧬</div>
+                        <div class="stat-info">
+                            <div class="stat-label">NFT Types</div>
+                            <div class="stat-value" id="nftTypes">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="list-card">
+                    <div class="list-title">Bait Prices</div>
+                    <div id="baitPriceList" class="simple-list"></div>
+                </div>
+            </section>
+
+            <!-- River Fish Config -->
+            <section class="card" id="riverConfigSection" style="display: none;">
+                <div class="section-header">
+                    <h2>🌊 River Fish Configuration</h2>
+                    <button class="collapse-btn" id="riverConfigToggle" aria-expanded="false">Show</button>
+                </div>
+                <div id="riverConfigContent">
+                <div class="status-row">
+                    <span class="status-label">System</span>
+                    <span class="status-pill" id="riverActive">-</span>
+                    <span class="status-label">Difficulty Ref</span>
+                    <span class="status-value" id="riverDifficultyRef">-</span>
+                    <span class="status-label">Fish Types</span>
+                    <span class="status-value" id="riverFishCount">-</span>
+                </div>
+                <div class="table-card">
+                    <div class="table-title">Bait Pricing</div>
+                    <div class="table-wrapper">
+                        <table class="simple-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Unlock</th>
+                                    <th>Casts/Unit</th>
+                                    <th>Fish Cost</th>
+                                    <th>USDC Fee</th>
+                                </tr>
+                            </thead>
+                            <tbody id="riverBaitTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="table-card">
+                    <div class="table-title">River Fish Types</div>
+                    <div class="table-wrapper">
+                        <table class="simple-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Required Bait</th>
+                                    <th>Rarity</th>
+                                    <th>Catch Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody id="riverFishTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                </div>
+            </section>
+
+            <!-- River Fish State -->
+            <section class="card" id="riverStateSection" style="display: none;">
+                <h2>🐠 River Catch Status</h2>
+                <div class="status-row">
+                    <span class="status-label">Active Bait</span>
+                    <span class="status-value" id="riverActiveBait">-</span>
+                </div>
+                <div class="list-card">
+                    <div class="list-title">Remaining Casts</div>
+                    <div id="remainingCastsList" class="simple-list"></div>
+                </div>
+                <div class="list-card">
+                    <div class="list-title">Pending River Catches</div>
+                    <div id="pendingRiverList" class="simple-list"></div>
+                </div>
+            </section>
+
+            <!-- Collection Grid -->
+            <section class="card" id="collectionGridSection" style="display: none;">
+                <h2>🧩 Collection Grid</h2>
+                <div class="stats-grid small-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">📦</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Slots Completed</div>
+                            <div class="stat-value" id="gridCompletedSlots">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🏅</div>
+                        <div class="stat-info">
+                            <div class="stat-label">Completed Sets</div>
+                            <div class="stat-value" id="gridCompletedSets">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🧾</div>
+                        <div class="stat-info">
+                            <div class="stat-label">NFTs Placed</div>
+                            <div class="stat-value" id="gridNftsPlaced">-</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-track">
+                        <div class="progress-bar" id="gridProgressBar"></div>
+                    </div>
+                    <div class="progress-text" id="gridProgressText">0% complete</div>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Last Placement:</span>
+                    <span class="detail-value" id="gridLastPlacement">-</span>
+                </div>
+            </section>
+        </div>
+
+        <!-- Emission Predictions - Always visible, above leaderboard -->
+        <section class="card emission-predictions" id="emissionSection">
+            <h2>📈 Emission Analysis & Difficulty Prediction</h2>
+            
+            <div class="emission-summary">
+                <div class="summary-card">
+                    <div class="summary-label">Actual 24h Emission</div>
+                    <div class="summary-value" id="actualEmission24h">-</div>
+                    <div class="summary-formula">Total Supply + Unprocessed - Period Start</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-label">Daily Target Emission</div>
+                    <div class="summary-value" id="dailyTargetEmission">-</div>
+                </div>
+                <div class="summary-card" id="difficultyCard">
+                    <div class="summary-label">Difficulty Prediction</div>
+                    <div class="summary-value" id="difficultyPrediction">-</div>
+                    <div class="summary-status" id="difficultyStatus"></div>
+                </div>
+            </div>
+            
+            <div class="emission-details">
+                <h3>Emission Details</h3>
+                <div class="details-list">
+                    <div class="detail-row">
+                        <span class="detail-label">Total Fish Minted:</span>
+                        <span class="detail-value" id="totalFishMinted">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Total Unprocessed Fish:</span>
+                        <span class="detail-value" id="totalUnprocessedFish">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Period Start Fish (24h ago):</span>
+                        <span class="detail-value" id="periodStartFish">-</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Emission Difference:</span>
+                        <span class="detail-value" id="emissionDiff">-</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Leaderboard - Always visible -->
+        <section class="card leaderboard-section" id="leaderboardSection">
+            <h2>🏆 Leaderboard - All Players</h2>
+            <div class="tabs">
+                <button class="tab-btn active" id="tabUnprocessed" data-sort="unprocessed">Sort by Unprocessed Fish</button>
+                <button class="tab-btn" id="tabYield" data-sort="yield">Sort by Yield</button>
+                <button class="tab-btn" id="tabTotal" data-sort="total">Sort by Total</button>
+                <button class="tab-btn" id="tabLevel" data-sort="level">Sort by Rod Level</button>
+            </div>
+            <div id="top-players-tab">
+                <div class="leaderboard-header">
+                    <div class="leaderboard-info">
+                        <span id="leaderboardSortInfo">Ranked by Unprocessed Fish</span>
+                    </div>
+                </div>
+                <div class="leaderboard-table-container">
+                    <table class="leaderboard-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Address</th>
+                                <th>Unprocessed Fish</th>
+                                <th>Yield</th>
+                                <th class="total-column" id="totalColumnHeader" style="display: none;">Total</th>
+                                <th>Power</th>
+                                <th>Casts</th>
+                                <th>Rod Level</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardTableBody">
+                            <tr>
+                                <td colspan="9" class="loading-row">Loading leaderboard...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="leaderboardPagination">
+                    <button class="page-btn" id="prevPageBtn" disabled>← Previous</button>
+                    <span class="page-info" id="pageInfo">Page 1 of 1</span>
+                    <button class="page-btn" id="nextPageBtn" disabled>Next →</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recent Mints - Always visible -->
+        <section class="card recent-mints" id="recentMintsSection">
+            <h2>🪙 Recent FISH Mints</h2>
+            <div class="mints-header">
+                <div class="mints-info">
+                    <span>Token: <strong>F1SHuJ3sFF2wJoYbUJxK4iZ6CYg6MakFj8q6QHACFd4s</strong></span>
+                </div>
+                <button class="refresh-btn" id="refreshMintsBtn">🔄 Refresh</button>
+            </div>
+            <div class="mints-table-container">
+                <table class="mints-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Amount</th>
+                            <th>To Address</th>
+                            <th>Signature</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mintsTableBody">
+                        <tr>
+                            <td colspan="4" class="loading-row">Loading recent mints...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Global Stats - Always visible -->
+        <section class="card global-stats" id="globalStatsSection">
+            <h2>🌍 Global Network Statistics</h2>
+            <div class="global-grid">
+                <div class="global-card">
+                    <div class="global-icon">⚙️</div>
+                    <div class="global-info">
+                        <div class="global-label">Current Difficulty</div>
+                        <div class="global-value" id="globalDifficulty">-</div>
+                    </div>
+                </div>
+                <div class="global-card">
+                    <div class="global-icon">⚡</div>
+                    <div class="global-info">
+                        <div class="global-label">Total Network Power</div>
+                        <div class="global-value" id="globalPower">-</div>
+                    </div>
+                </div>
+                <div class="global-card">
+                    <div class="global-icon">🐟</div>
+                    <div class="global-info">
+                        <div class="global-label">Total Fish Minted</div>
+                        <div class="global-value" id="globalFishMinted">-</div>
+                    </div>
+                </div>
+                <div class="global-card">
+                    <div class="global-icon">🐠</div>
+                    <div class="global-info">
+                        <div class="global-label">Total Unprocessed Fish</div>
+                        <div class="global-value" id="globalUnprocessed">-</div>
+                    </div>
+                </div>
+                <div class="global-card">
+                    <div class="global-icon">💰</div>
+                    <div class="global-info">
+                        <div class="global-label">Total FOGO Collected</div>
+                        <div class="global-value" id="globalFogo">-</div>
+                    </div>
+                </div>
+                <div class="global-card">
+                    <div class="global-icon">💵</div>
+                    <div class="global-info">
+                        <div class="global-label">Accumulated Fees</div>
+                        <div class="global-value" id="globalFees">-</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="emission-info">
+                <h3>Emission Settings</h3>
+                <div class="emission-settings">
+                    <div class="setting-item">
+                        <span class="setting-label">Base Emission Rate:</span>
+                        <span class="setting-value" id="baseEmission">-</span>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">Daily Target Emission:</span>
+                        <span class="setting-value" id="dailyTarget">-</span>
+                    </div>
+                    <div class="setting-item">
+                        <span class="setting-label">Halving Count:</span>
+                        <span class="setting-value" id="halvingCount">-</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Config Info - Always visible -->
+        <section class="card config-info" id="configSection">
+            <h2>⚙️ Game Configuration</h2>
+            <div class="config-grid">
+                <div class="config-item">
+                    <span class="config-label">Require Cap for Catch:</span>
+                    <span class="config-value" id="capCatch">-</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Require Cap for Spend:</span>
+                    <span class="config-value" id="capSpend">-</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Require Fee for Init:</span>
+                    <span class="config-value" id="feeInit">-</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Soft Gate Mode:</span>
+                    <span class="config-value" id="softGate">-</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Basic Cooldown:</span>
+                    <span class="config-value" id="cooldown">-</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- PDAs - Always visible -->
+        <section class="card pda-info" id="pdaSection">
+            <h2>🔍 Program Derived Addresses (PDAs)</h2>
+            <div class="pda-list">
+                <div class="pda-item">
+                    <span class="pda-label">PlayerState PDA:</span>
+                    <span class="pda-value address-value" id="playerStatePDA"></span>
+                </div>
+                <div class="pda-item">
+                    <span class="pda-label">ReferrerInfo PDA:</span>
+                    <span class="pda-value address-value" id="referrerInfoPDA"></span>
+                </div>
+                <div class="pda-item">
+                    <span class="pda-label">NFT Config PDA:</span>
+                    <span class="pda-value address-value" id="nftConfigPDA"></span>
+                </div>
+                <div class="pda-item">
+                    <span class="pda-label">River Config PDA:</span>
+                    <span class="pda-value address-value" id="riverConfigPDA"></span>
+                </div>
+                <div class="pda-item">
+                    <span class="pda-label">River State PDA:</span>
+                    <span class="pda-value address-value" id="riverStatePDA"></span>
+                </div>
+                <div class="pda-item">
+                    <span class="pda-label">Collection Grid PDA:</span>
+                    <span class="pda-value address-value" id="collectionGridPDA"></span>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,28 @@
+{
+  "name": "fogo-fishing-stats-dashboard",
+  "version": "1.0.0",
+  "description": "Fogo Fishing Stats Dashboard - Real-time blockchain statistics and yield calculator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "server": "node server.js",
+    "web": "node server.js"
+  },
+  "keywords": [
+    "fogo",
+    "fishing",
+    "solana",
+    "blockchain",
+    "stats",
+    "dashboard"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@solana/web3.js": "^1.91.1",
+    "bn.js": "^5.2.1",
+    "bs58": "^6.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.22.1"
+  }
+}
