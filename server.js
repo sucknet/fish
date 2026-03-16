@@ -54,6 +54,26 @@ let difficultySnapshot = {
     baselines: {}        // { address: fish_caught_all_time raw string }
 };
 
+// Tracks difficulty period timing + emission (mint-based) cache
+let difficultyPeriod = {
+    diffSlot: null,
+    startTs: null // unix seconds
+};
+
+let emissionMintCache = {
+    diffSlot: null,
+    startTs: null,
+    totalMinted: 0, // FISH (number)
+    lastUpdatedMs: 0,
+    isRefreshing: false
+};
+
+let difficultyWatcherState = {
+    lastCheckedMs: 0,
+    lastChangeMs: 0,
+    lastSeenDiffSlot: null
+};
+
 // Called when a new difficulty period is detected.
 // Pre-populates baselines for all players currently in the leaderboard cache,
 // so any address lookup immediately shows fish earned since the diff change.
@@ -71,6 +91,193 @@ function snapshotLeaderboardForNewPeriod(newDiffSlot) {
     }
     difficultySnapshot = newSnapshot;
 }
+
+async function fetchGlobalStateInternal() {
+    const [globalStatePDA] = await findPDA([Buffer.from('global-state')]);
+    const globalAccountInfo = await connection.getAccountInfo(globalStatePDA);
+    if (!globalAccountInfo) return null;
+    return deserializeGlobalState(globalAccountInfo.data);
+}
+
+async function getBlockTimeSafe(slotStr) {
+    try {
+        const slot = Number(slotStr);
+        if (!Number.isFinite(slot)) return null;
+        const blockTime = await connection.getBlockTime(slot);
+        if (!blockTime) return null;
+        const bt = Number(blockTime);
+        if (!Number.isFinite(bt)) return null;
+        // Some RPCs may return epoch milliseconds; normalize to seconds.
+        return bt > 1e12 ? Math.floor(bt / 1000) : bt;
+    } catch {
+        return null;
+    }
+}
+
+function normalizeEpochSeconds(ts) {
+    const n = Number(ts);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n > 1e12 ? Math.floor(n / 1000) : n;
+}
+
+function bnRawToTokenNumber(rawAmount, decimals) {
+    const raw = new BN(rawAmount || '0');
+    const divisor = new BN(10).pow(new BN(decimals));
+    const whole = raw.div(divisor);
+    const remainder = raw.mod(divisor);
+    const padded = remainder.toString().padStart(decimals, '0');
+    // Convert to number (safe for typical daily ranges); UI formatting uses 2 decimals anyway
+    return parseFloat(`${whole.toString()}.${padded}`);
+}
+
+function parseFogoscanAmountToRawBN(amount, decimals) {
+    // Fogoscan sometimes returns raw integer (scaled by token decimals), and sometimes a decimal string.
+    // Normalize into a raw integer BN scaled by `decimals`.
+    let s = amount;
+    if (typeof s === 'number') s = s.toString();
+    if (typeof s !== 'string') s = '0';
+    s = s.replace(/,/g, '').trim();
+    if (!s) return new BN(0);
+
+    // Decimal string
+    if (s.includes('.')) {
+        const [wholeStr, fracStrRaw] = s.split('.');
+        const wholePart = wholeStr && wholeStr !== '' ? wholeStr : '0';
+        const fracStr = (fracStrRaw || '').slice(0, decimals).padEnd(decimals, '0');
+        const normalized = `${wholePart}${fracStr}`.replace(/^\+/, '');
+        const digitsOnly = normalized.replace(/^0+(\d)/, '$1');
+        try {
+            return new BN(digitsOnly || '0');
+        } catch {
+            return new BN(0);
+        }
+    }
+
+    // Raw integer string
+    try {
+        return new BN(s);
+    } catch {
+        return new BN(0);
+    }
+}
+
+async function fetchMintedFishSince(startTs) {
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 50; // cap to avoid runaway loops
+    const TOKEN_DECIMALS = 6;
+    let totalRaw = new BN(0);
+
+    const startTsSec = normalizeEpochSeconds(startTs) || Math.floor(Date.now() / 1000) - 86400;
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
+        const url = `https://api.fogoscan.com/v1/token/transfer?address=${FISH_MINT_ADDRESS}&page=${page}&page_size=${PAGE_SIZE}&exclude_amount_zero=false&activity_type[]=ACTIVITY_SPL_MINT`;
+        const data = await fetchFromFogoscan(url);
+        let transfers = [];
+        if (data && data.data && Array.isArray(data.data)) transfers = data.data;
+        else if (Array.isArray(data)) transfers = data;
+        else if (data && Array.isArray(data.items)) transfers = data.items;
+
+        if (!transfers || transfers.length === 0) break;
+
+        let oldestTsInPage = null;
+        for (const t of transfers) {
+            const tsRaw = t.block_time || t.timestamp || t.time || t.created_at;
+            const tsSec = normalizeEpochSeconds(tsRaw);
+            if (tsSec !== null) {
+                if (oldestTsInPage === null || tsSec < oldestTsInPage) oldestTsInPage = tsSec;
+                if (tsSec < startTsSec) continue;
+            }
+
+            let amount = t.amount || t.token_amount || t.amount_string || t.value || '0';
+            const raw = parseFogoscanAmountToRawBN(amount, TOKEN_DECIMALS);
+            totalRaw = totalRaw.add(raw);
+        }
+
+        // If the oldest item in this page is already before startTs, we've covered the window
+        if (oldestTsInPage !== null && oldestTsInPage < startTsSec) break;
+    }
+
+    return bnRawToTokenNumber(totalRaw.toString(), TOKEN_DECIMALS);
+}
+
+async function refreshMintedSinceDiff(force = false) {
+    if (emissionMintCache.isRefreshing) return emissionMintCache.totalMinted;
+
+    const nowMs = Date.now();
+    if (!force && emissionMintCache.lastUpdatedMs && (nowMs - emissionMintCache.lastUpdatedMs) < CACHE_TTL) {
+        return emissionMintCache.totalMinted;
+    }
+
+    if (!emissionMintCache.startTs) return emissionMintCache.totalMinted;
+
+    emissionMintCache.isRefreshing = true;
+    try {
+        const minted = await fetchMintedFishSince(emissionMintCache.startTs);
+        emissionMintCache.totalMinted = minted;
+        emissionMintCache.lastUpdatedMs = nowMs;
+        return minted;
+    } catch (e) {
+        console.warn('[EmissionMintCache] Refresh failed:', e.message);
+        return emissionMintCache.totalMinted;
+    } finally {
+        emissionMintCache.isRefreshing = false;
+    }
+}
+
+async function checkDifficultyAndSnapshot(force = false, options = {}) {
+    if (options && options.isChecking) return;
+    try {
+        difficultyWatcherState.lastCheckedMs = Date.now();
+        const globalState = await fetchGlobalStateInternal();
+        if (!globalState) return;
+
+        const currentDiffSlot = globalState.last_difficulty_adjustment;
+        const changed = difficultyPeriod.diffSlot !== currentDiffSlot;
+        if (!force && !changed) return;
+
+        if (changed) {
+            difficultyWatcherState.lastChangeMs = Date.now();
+            difficultyWatcherState.lastSeenDiffSlot = currentDiffSlot;
+            console.log(`[DifficultyWatcher] Diff change detected -> slot ${currentDiffSlot}`);
+        }
+
+        difficultyPeriod.diffSlot = currentDiffSlot;
+        const startTs = (await getBlockTimeSafe(currentDiffSlot)) || Math.floor(Date.now() / 1000) - 86400;
+        difficultyPeriod.startTs = startTs;
+
+        emissionMintCache.diffSlot = currentDiffSlot;
+        emissionMintCache.startTs = startTs;
+        emissionMintCache.lastUpdatedMs = 0;
+
+        // Refresh leaderboard once for accurate baselines, then snapshot
+        if (options.refreshLeaderboard !== false) {
+            await refreshLeaderboardCache(true);
+        }
+        snapshotLeaderboardForNewPeriod(currentDiffSlot);
+
+        // Refresh mint-based emission in background-ish (await here so the first request is correct)
+        await refreshMintedSinceDiff(true);
+    } catch (e) {
+        console.warn('[DifficultyWatcher] check failed:', e.message);
+    }
+}
+
+// Debug/status endpoint: helps verify diff watcher + snapshots are working
+app.get('/api/diff-status', async (req, res) => {
+    try {
+        res.json({
+            diffSlot: difficultySnapshot.diffSlot,
+            baselineCount: difficultySnapshot && difficultySnapshot.baselines ? Object.keys(difficultySnapshot.baselines).length : 0,
+            watcher: difficultyWatcherState,
+            leaderboardCache: {
+                players: (leaderboardCache.data && leaderboardCache.data.players) ? leaderboardCache.data.players.length : 0,
+                lastUpdated: leaderboardCache.lastUpdated
+            }
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // Cache TTL: 5 minutes (300000 ms)
 const CACHE_TTL = 5 * 60 * 1000;
@@ -586,21 +793,15 @@ function deserializeRiverFishState(data) {
 }
 
 // Calculate emission prediction
-function calculateEmissionPrediction(globalState, difficultyTracker) {
+function calculateEmissionPrediction(globalState, mintedSinceDiff) {
     try {
-        const totalFishMinted = parseTokenAmount(globalState.total_fish_minted);
-        const totalUnprocessedFish = parseTokenAmount(globalState.total_unprocessed_fish);
         const dailyTarget = parseTokenAmount(globalState.daily_target_emission);
+        const totalFishMinted = Number(mintedSinceDiff) || 0;
+        const totalUnprocessedFish = parseTokenAmount(globalState.total_unprocessed_fish); // informational only
+        const periodStartFishCount = 0; // no longer used for emission calculation
         
-        // Get period_start_fish_count from difficulty tracker (24h ago)
-        let periodStartFishCount = 0;
-        if (difficultyTracker && difficultyTracker.period_start_fish_count) {
-            periodStartFishCount = parseTokenAmount(difficultyTracker.period_start_fish_count);
-        }
-        
-        // Calculate actual emission: total_supply + unprocessed_fish - period_start_fish_count
-        // This represents the fish minted in the last 24 hours
-        const actualEmission24h = totalFishMinted + totalUnprocessedFish - periodStartFishCount;
+        // Actual emission is computed from real mint transfers since the last difficulty change
+        const actualEmission24h = totalFishMinted;
         
         // Compare with daily target emission
         const emissionDiff = actualEmission24h - dailyTarget;
@@ -1145,10 +1346,19 @@ app.post('/api/stats', async (req, res) => {
             difficultyTracker = deserializeDifficultyTracker(difficultyTrackerAccountInfo.data);
         }
         
-        // Calculate emission prediction
+        // Calculate emission prediction (mint-based, since last diff change)
         let emissionPrediction = null;
         if (globalState) {
-            emissionPrediction = calculateEmissionPrediction(globalState, difficultyTracker);
+            const currentDiffSlot = globalState.last_difficulty_adjustment;
+            // Ensure caches are aligned to current diff slot
+            if (emissionMintCache.diffSlot !== currentDiffSlot || !emissionMintCache.startTs) {
+                const startTs = (await getBlockTimeSafe(currentDiffSlot)) || Math.floor(Date.now() / 1000) - 86400;
+                emissionMintCache.diffSlot = currentDiffSlot;
+                emissionMintCache.startTs = startTs;
+                emissionMintCache.lastUpdatedMs = 0;
+            }
+            const mintedSinceDiff = await refreshMintedSinceDiff(false);
+            emissionPrediction = calculateEmissionPrediction(globalState, mintedSinceDiff);
         }
         
         // Calculate yield
@@ -1169,9 +1379,10 @@ app.post('/api/stats', async (req, res) => {
         let fishSinceDiffNote = null;
         if (playerState && globalState) {
             const currentDiffSlot = globalState.last_difficulty_adjustment;
-            // If difficulty period changed, snapshot all leaderboard players as new baselines
+            // If difficulty period changed and watcher hasn't run yet, do a best-effort snapshot
             if (difficultySnapshot.diffSlot !== currentDiffSlot) {
                 snapshotLeaderboardForNewPeriod(currentDiffSlot);
+                checkDifficultyAndSnapshot(false).catch(() => {});
             }
             const currentFish = playerState.fish_caught_all_time;
             if (difficultySnapshot.baselines[address] === undefined) {
@@ -1393,32 +1604,13 @@ app.get('/api/recent-mints', async (req, res) => {
                     ? signature.slice(0, 8) + '...' + signature.slice(-8) 
                     : signature;
                 const to = transfer.to_address || transfer.to || transfer.destination || transfer.receiver || 'Unknown';
-                // Amount from API is in raw format (with decimals), need to divide by 10^6
-                let amount = transfer.amount || transfer.token_amount || transfer.amount_string || transfer.value || '0';
-                
-                // Remove commas if present and convert to string
-                if (typeof amount === 'string') {
-                    amount = amount.replace(/,/g, '');
-                } else if (typeof amount === 'number') {
-                    amount = amount.toString();
-                } else {
-                    amount = '0';
-                }
-                
-                // Convert from raw amount to actual amount (divide by 10^6 for 6 decimals)
+                // Amount from API might be raw integer or decimal string
                 const TOKEN_DECIMALS = 6;
-                let numAmount;
-                try {
-                    // Use BN for precision with large numbers
-                    const rawAmount = new BN(amount);
-                    const divisor = new BN(10).pow(new BN(TOKEN_DECIMALS));
-                    const wholePart = rawAmount.div(divisor);
-                    const remainder = rawAmount.mod(divisor);
-                    numAmount = wholePart.toNumber() + remainder.toNumber() / Math.pow(10, TOKEN_DECIMALS);
-                } catch (err) {
-                    // Fallback to parseFloat if BN fails
-                    numAmount = parseFloat(amount) / Math.pow(10, TOKEN_DECIMALS);
-                }
+                const rawAmount = parseFogoscanAmountToRawBN(
+                    transfer.amount || transfer.token_amount || transfer.amount_string || transfer.value || '0',
+                    TOKEN_DECIMALS
+                );
+                const numAmount = bnRawToTokenNumber(rawAmount.toString(), TOKEN_DECIMALS);
                 
                 return {
                     signature: signature,
@@ -1664,6 +1856,33 @@ async function refreshLeaderboardCache(force = false) {
 
 // Get Leaderboard - All Players by Unprocessed Fish
 // Uses cached data, returns ALL players (pagination handled on frontend)
+function withCaughtSinceDiff(players) {
+    const baselines = (difficultySnapshot && difficultySnapshot.baselines) ? difficultySnapshot.baselines : {};
+    if (!Array.isArray(players) || players.length === 0) return [];
+
+    return players.map(p => {
+        if (!p || !p.address) return p;
+        const currentRaw = (p.fish_caught_all_time || '0').toString();
+        const baselineRaw = baselines[p.address];
+
+        let diffRaw = '0';
+        try {
+            if (baselineRaw !== undefined) {
+                const d = new BN(currentRaw).sub(new BN(baselineRaw));
+                diffRaw = d.isNeg() ? '0' : d.toString();
+            }
+        } catch {
+            diffRaw = '0';
+        }
+
+        return {
+            ...p,
+            caught_since_diff_raw: diffRaw,
+            caught_since_diff_formatted: formatTokenAmount(diffRaw)
+        };
+    });
+}
+
 app.get('/api/leaderboard', async (req, res) => {
     try {
         // Get cached data (will refresh if expired)
@@ -1671,9 +1890,12 @@ app.get('/api/leaderboard', async (req, res) => {
         
         console.log(`[Leaderboard] Returning ALL ${data.players.length} players from cache`);
         
+        const players = withCaughtSinceDiff(data.players);
+
         res.json({
-            players: data.players, // All players, sorted by unprocessed_fish descending
-            lastUpdated: data.lastUpdated
+            players, // All players, sorted by unprocessed_fish descending
+            lastUpdated: data.lastUpdated,
+            diffSlot: difficultySnapshot.diffSlot
         });
     } catch (error) {
         console.error('[Leaderboard] Error:', error);
@@ -1686,11 +1908,14 @@ app.post('/api/leaderboard/refresh', async (req, res) => {
     try {
         console.log('[Leaderboard] Manual refresh requested');
         const data = await refreshLeaderboardCache(true);
+
+        const players = withCaughtSinceDiff(data.players);
         
         res.json({
             success: true,
-            players: data.players,
+            players,
             lastUpdated: data.lastUpdated,
+            diffSlot: difficultySnapshot.diffSlot,
             message: 'Leaderboard cache refreshed successfully'
         });
     } catch (error) {
@@ -1710,14 +1935,23 @@ app.listen(PORT, () => {
 
     // Initialize leaderboard cache in background (non-blocking — server is ready immediately)
     refreshLeaderboardCache(true)
-        .then(d => console.log(`[Leaderboard Cache] Initial load done — ${(d && d.players && d.players.length) || 0} players`))
+        .then(d => {
+            console.log(`[Leaderboard Cache] Initial load done — ${(d && d.players && d.players.length) || 0} players`);
+            // After leaderboard is ready, snapshot current diff period baselines + mint emission
+            return checkDifficultyAndSnapshot(true, { refreshLeaderboard: false });
+        })
         .catch(e => console.warn('[Leaderboard Cache] Initial load failed (will retry on next interval):', e.message));
 
-    // Auto-refresh every 5 minutes
+    // Auto-refresh leaderboard every 5 minutes
     setInterval(() => {
         refreshLeaderboardCache(false)
             .catch(e => console.warn('[Leaderboard Cache] Auto-refresh error:', e.message));
     }, CACHE_TTL);
+
+    // Watch for difficulty changes (snapshot baselines + reset mint-emission period)
+    setInterval(() => {
+        checkDifficultyAndSnapshot(false).catch(() => {});
+    }, 15 * 1000);
 
     console.log(`[Leaderboard Cache] Auto-refresh enabled (every ${CACHE_TTL / 1000}s)`);
 });

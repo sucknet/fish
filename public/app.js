@@ -894,7 +894,7 @@ async function loadGlobalDataOnLoad() {
 let currentLeaderboardPage = 1;
 const LEADERBOARD_PAGE_SIZE = 10;
 let cachedLeaderboardData = null; // Cache untuk menyimpan data leaderboard
-let currentSortType = 'unprocessed'; // 'unprocessed', 'yield', 'total', 'level'
+let currentSortType = 'unprocessed'; // 'unprocessed', 'yield', 'total', 'level', 'catch'
 
 // Load leaderboard from cache or API
 async function loadLeaderboard(page = 1, forceRefresh = false) {
@@ -911,7 +911,7 @@ async function loadLeaderboard(page = 1, forceRefresh = false) {
         
         // Show loading only on refresh
         if (forceRefresh) {
-            const colspan = currentSortType === 'total' ? 9 : 8;
+            const colspan = (currentSortType === 'total' || currentSortType === 'catch') ? 9 : 8;
             tbody.innerHTML = `<tr><td colspan="${colspan}" class="loading-row">Refreshing leaderboard...</td></tr>`;
             
             // Call refresh endpoint to force server cache refresh
@@ -938,7 +938,7 @@ async function loadLeaderboard(page = 1, forceRefresh = false) {
         // If server returned empty (still warming up), retry after 3 seconds
         if (!data.players || data.players.length === 0) {
             const tbody = document.getElementById('leaderboardTableBody');
-            const colspan = currentSortType === 'total' ? 9 : 8;
+            const colspan = (currentSortType === 'total' || currentSortType === 'catch') ? 9 : 8;
             if (tbody) tbody.innerHTML = `<tr><td colspan="${colspan}" class="loading-row">Loading leaderboard data... retrying in 3s</td></tr>`;
             setTimeout(() => loadLeaderboard(page, false), 3000);
             return;
@@ -954,7 +954,7 @@ async function loadLeaderboard(page = 1, forceRefresh = false) {
         console.error('Error loading leaderboard:', error);
         const tbody = document.getElementById('leaderboardTableBody');
         if (tbody) {
-            const colspan = currentSortType === 'total' ? 9 : 8;
+            const colspan = (currentSortType === 'total' || currentSortType === 'catch') ? 9 : 8;
             tbody.innerHTML = `<tr><td colspan="${colspan}" class="loading-row">Error loading leaderboard</td></tr>`;
         }
     }
@@ -1021,6 +1021,13 @@ function sortPlayers(players, sortType) {
             if (aStr.length !== bStr.length) return bStr.length - aStr.length;
             return bStr.localeCompare(aStr);
         });
+    } else if (sortType === 'catch') {
+        sorted.sort((a, b) => {
+            const aVal = (a.caught_since_diff_raw || '0').toString();
+            const bVal = (b.caught_since_diff_raw || '0').toString();
+            if (aVal.length !== bVal.length) return bVal.length - aVal.length;
+            return bVal.localeCompare(aVal);
+        });
     }
     
     return sorted;
@@ -1054,10 +1061,11 @@ function displayLeaderboardPage(data, page) {
         nextBtn.disabled = page >= totalPages;
     }
     
-    // Show/hide Total column based on sort type
+    // Show/hide extra column based on sort type
     const totalColumnHeader = document.getElementById('totalColumnHeader');
-    const showTotalColumn = currentSortType === 'total';
+    const showTotalColumn = currentSortType === 'total' || currentSortType === 'catch';
     if (totalColumnHeader) {
+        totalColumnHeader.textContent = currentSortType === 'catch' ? 'Caught Since Diff' : 'Total';
         totalColumnHeader.style.display = showTotalColumn ? '' : 'none';
     }
     
@@ -1086,16 +1094,18 @@ function displayLeaderboardPage(data, page) {
             // So we need to divide by their respective decimals to get FISH tokens
             let totalCell = '';
             if (showTotalColumn) {
-                const unprocessedRaw = parseFloat(player.unprocessed_fish) || 0;
-                const yieldRaw = parseFloat(player.yield_raw) || 0;
-                // unprocessed_fish: divide by 10^6 to get FISH tokens
-                // yield_raw: divide by 10^18 to get FISH tokens (from server calculation)
-                const unprocessedFish = unprocessedRaw / 1000000;
-                const yieldFish = yieldRaw / 1000000000000000000; // 10^18
-                const total = unprocessedFish + yieldFish;
-                // Format total with 2 decimals
-                const totalFormatted = formatTokenAmount(total);
-                totalCell = `<td class="amount-cell total-column">${totalFormatted} FISH</td>`;
+                if (currentSortType === 'catch') {
+                    const caughtFormatted = player.caught_since_diff_formatted || formatTokenAmount(player.caught_since_diff_raw || '0');
+                    totalCell = `<td class="amount-cell total-column">${caughtFormatted} FISH</td>`;
+                } else {
+                    const unprocessedRaw = parseFloat(player.unprocessed_fish) || 0;
+                    const yieldRaw = parseFloat(player.yield_raw) || 0;
+                    const unprocessedFish = unprocessedRaw / 1000000;
+                    const yieldFish = yieldRaw / 1000000000000000000; // 10^18
+                    const total = unprocessedFish + yieldFish;
+                    const totalFormatted = formatTokenAmount(total);
+                    totalCell = `<td class="amount-cell total-column">${totalFormatted} FISH</td>`;
+                }
             }
             
             row.innerHTML = `
@@ -1168,6 +1178,7 @@ function switchSortType(sortType) {
     const tabYield = document.getElementById('tabYield');
     const tabTotal = document.getElementById('tabTotal');
     const tabLevel = document.getElementById('tabLevel');
+    const tabCatch = document.getElementById('tabCatch');
     const sortInfo = document.getElementById('leaderboardSortInfo');
     
     // Remove active class from all tabs
@@ -1175,6 +1186,7 @@ function switchSortType(sortType) {
     if (tabYield) tabYield.classList.remove('active');
     if (tabTotal) tabTotal.classList.remove('active');
     if (tabLevel) tabLevel.classList.remove('active');
+    if (tabCatch) tabCatch.classList.remove('active');
     
     // Add active class to selected tab and update info
     if (sortType === 'unprocessed') {
@@ -1189,6 +1201,9 @@ function switchSortType(sortType) {
     } else if (sortType === 'level') {
         if (tabLevel) tabLevel.classList.add('active');
         if (sortInfo) sortInfo.textContent = 'Ranked by Rod Level';
+    } else if (sortType === 'catch') {
+        if (tabCatch) tabCatch.classList.add('active');
+        if (sortInfo) sortInfo.textContent = 'Ranked by Catch Since Last Diff';
     }
     
     // Re-display current page with new sort
@@ -1219,6 +1234,11 @@ function loadLeaderboardOnLoad() {
     const tabLevel = document.getElementById('tabLevel');
     if (tabLevel) {
         tabLevel.addEventListener('click', () => switchSortType('level'));
+    }
+
+    const tabCatch = document.getElementById('tabCatch');
+    if (tabCatch) {
+        tabCatch.addEventListener('click', () => switchSortType('catch'));
     }
     
     loadLeaderboard(1, false); // Load from API on first load
@@ -1265,7 +1285,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Load leaderboard on page load
     loadLeaderboardOnLoad();
-    
+
     // Load global data (emission, global stats, config, PDAs) on page load
     loadGlobalDataOnLoad();
     // Setup collapsible sections

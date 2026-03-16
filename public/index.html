@@ -420,7 +420,7 @@
                 <div class="summary-card">
                     <div class="summary-label">Actual 24h Emission</div>
                     <div class="summary-value" id="actualEmission24h">-</div>
-                    <div class="summary-formula">Total Supply + Unprocessed - Period Start</div>
+                    <div class="summary-formula">Sum of mint transfers since last diff change</div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Daily Target Emission</div>
@@ -437,15 +437,15 @@
                 <h3>Emission Details</h3>
                 <div class="details-list">
                     <div class="detail-row">
-                        <span class="detail-label">Total Fish Minted:</span>
+                        <span class="detail-label">Minted Since Last Diff:</span>
                         <span class="detail-value" id="totalFishMinted">-</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Total Unprocessed Fish:</span>
+                        <span class="detail-label">(Not used) Total Unprocessed Fish:</span>
                         <span class="detail-value" id="totalUnprocessedFish">-</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Period Start Fish (24h ago):</span>
+                        <span class="detail-label">(Not used) Period Start Fish:</span>
                         <span class="detail-value" id="periodStartFish">-</span>
                     </div>
                     <div class="detail-row">
@@ -464,6 +464,7 @@
                 <button class="tab-btn" id="tabYield" data-sort="yield">Sort by Yield</button>
                 <button class="tab-btn" id="tabTotal" data-sort="total">Sort by Total</button>
                 <button class="tab-btn" id="tabLevel" data-sort="level">Sort by Rod Level</button>
+                <button class="tab-btn" id="tabCatch" data-sort="catch">Sort by Catch Since Diff</button>
             </div>
             <div id="top-players-tab">
                 <div class="leaderboard-header">
