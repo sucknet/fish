@@ -281,7 +281,12 @@ app.get('/api/diff-status', async (req, res) => {
 
 // Cache TTL: 5 minutes (300000 ms)
 const CACHE_TTL = 5 * 60 * 1000;
-const LEADERBOARD_LIMIT = parseInt(process.env.LEADERBOARD_LIMIT || '2000');
+// LEADERBOARD_LIMIT:
+// - set to 0 to fetch ALL players/holders pages (can be heavy)
+// - set to N (>0) to cap processing to first N holder addresses
+const LEADERBOARD_LIMIT = parseInt(process.env.LEADERBOARD_LIMIT || '0');
+// Safety cap to prevent infinite paging if Fogoscan misbehaves
+const LEADERBOARD_MAX_PAGES = parseInt(process.env.LEADERBOARD_MAX_PAGES || '5000');
 
 // Utility: Find PDA
 async function findPDA(seeds) {
@@ -1707,9 +1712,10 @@ async function fetchLeaderboardData() {
     let usedFogoscan = false;
     try {
         const PAGE_SIZE = 100;
-        const totalPages = Math.ceil(LEADERBOARD_LIMIT / PAGE_SIZE);
+        const hasLimit = Number.isFinite(LEADERBOARD_LIMIT) && LEADERBOARD_LIMIT > 0;
+        const limitCount = hasLimit ? LEADERBOARD_LIMIT : Number.MAX_SAFE_INTEGER;
         let allAddresses = [];
-        for (let page = 1; page <= totalPages && allAddresses.length < LEADERBOARD_LIMIT; page++) {
+        for (let page = 1; page <= LEADERBOARD_MAX_PAGES && allAddresses.length < limitCount; page++) {
             try {
                 const url = `https://api.fogoscan.com/v1/token/holders?address=${FISH_MINT_ADDRESS}&page=${page}&page_size=${PAGE_SIZE}`;
                 const data = await fetchFromFogoscan(url);
@@ -1731,12 +1737,33 @@ async function fetchLeaderboardData() {
             }
         }
         if (allAddresses.length > 0) {
-            const derivations = await Promise.all(allAddresses.slice(0, LEADERBOARD_LIMIT).map(async addr => {
-                try {
-                    const [pda] = await findPDA([Buffer.from('player'), new PublicKey(addr).toBuffer()]);
-                    return pda;
-                } catch { return null; }
-            }));
+            // De-dupe + apply limit (if any)
+            const uniq = [];
+            const seen = new Set();
+            for (const a of allAddresses) {
+                if (!a) continue;
+                if (seen.has(a)) continue;
+                seen.add(a);
+                uniq.push(a);
+                if (uniq.length >= limitCount) break;
+            }
+
+            // Derive PDAs in chunks to avoid huge Promise.all spikes
+            const derivations = [];
+            const deriveChunk = 500;
+            for (let i = 0; i < uniq.length; i += deriveChunk) {
+                const chunk = uniq.slice(i, i + deriveChunk);
+                const chunkPdas = await Promise.all(chunk.map(async addr => {
+                    try {
+                        const [pda] = await findPDA([Buffer.from('player'), new PublicKey(addr).toBuffer()]);
+                        return pda;
+                    } catch {
+                        return null;
+                    }
+                }));
+                derivations.push(...chunkPdas);
+            }
+
             pdaKeys = derivations.filter(Boolean);
             usedFogoscan = true;
             console.log(`[Leaderboard Cache] Fogoscan: derived ${pdaKeys.length} player PDAs`);
@@ -1759,7 +1786,11 @@ async function fetchLeaderboardData() {
                 dataSlice: { offset: 8, length: 32 }, // fetch only owner field (32 bytes after 8-byte discriminator)
                 commitment: 'confirmed'
             });
-            pdaKeys = accounts.slice(0, LEADERBOARD_LIMIT).map(acc => acc.pubkey);
+            if (Number.isFinite(LEADERBOARD_LIMIT) && LEADERBOARD_LIMIT > 0) {
+                pdaKeys = accounts.slice(0, LEADERBOARD_LIMIT).map(acc => acc.pubkey);
+            } else {
+                pdaKeys = accounts.map(acc => acc.pubkey);
+            }
             console.log(`[Leaderboard Cache] getProgramAccounts returned ${pdaKeys.length} PDAs`);
         } catch (e) {
             console.warn('[Leaderboard Cache] getProgramAccounts also unavailable:', e.message);
