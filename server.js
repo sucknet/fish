@@ -57,7 +57,9 @@ let difficultySnapshot = {
 // Tracks difficulty period timing + emission (mint-based) cache
 let difficultyPeriod = {
     diffSlot: null,
-    startTs: null // unix seconds
+    startTs: null, // unix seconds
+    baselineSupplyPlusUnprocessedRaw: null, // raw (6 decimals) string
+    baselineSetAtMs: 0
 };
 
 let emissionMintCache = {
@@ -73,6 +75,41 @@ let difficultyWatcherState = {
     lastChangeMs: 0,
     lastSeenDiffSlot: null
 };
+
+// Total catch since last difficulty change (derived from difficultySnapshot baselines + leaderboard)
+let catchSinceDiffCache = {
+    diffSlot: null,
+    totalRaw: '0',
+    total: 0, // FISH (number)
+    lastUpdatedMs: 0
+};
+
+function refreshCatchSinceDiffTotalFromPlayers(players) {
+    const baselines = (difficultySnapshot && difficultySnapshot.baselines) ? difficultySnapshot.baselines : {};
+    let sum = new BN(0);
+    if (Array.isArray(players)) {
+        for (const p of players) {
+            if (!p || !p.address) continue;
+            const baselineRaw = baselines[p.address];
+            if (baselineRaw === undefined) continue;
+            try {
+                const currentRaw = new BN((p.fish_caught_all_time || '0').toString());
+                const baseRaw = new BN(baselineRaw.toString());
+                const d = currentRaw.sub(baseRaw);
+                if (!d.isNeg()) sum = sum.add(d);
+            } catch {
+                // ignore
+            }
+        }
+    }
+    catchSinceDiffCache = {
+        diffSlot: difficultySnapshot ? difficultySnapshot.diffSlot : null,
+        totalRaw: sum.toString(),
+        total: bnRawToTokenNumber(sum.toString(), 6),
+        lastUpdatedMs: Date.now()
+    };
+    return catchSinceDiffCache.total;
+}
 
 // Called when a new difficulty period is detected.
 // Pre-populates baselines for all players currently in the leaderboard cache,
@@ -245,6 +282,20 @@ async function checkDifficultyAndSnapshot(force = false, options = {}) {
         const startTs = (await getBlockTimeSafe(currentDiffSlot)) || Math.floor(Date.now() / 1000) - 86400;
         difficultyPeriod.startTs = startTs;
 
+        // Snapshot baseline for "Actual Emission Today" (old formula)
+        // baseline = total_fish_minted + total_unprocessed_fish at the start of the diff period (best-effort at detection time)
+        try {
+            const mintedRaw = (globalState.total_fish_minted || '0').toString();
+            const unprocessedRaw = (globalState.total_unprocessed_fish || '0').toString();
+            const baselineRaw = new BN(mintedRaw).add(new BN(unprocessedRaw)).toString();
+            if (changed || force || !difficultyPeriod.baselineSupplyPlusUnprocessedRaw) {
+                difficultyPeriod.baselineSupplyPlusUnprocessedRaw = baselineRaw;
+                difficultyPeriod.baselineSetAtMs = Date.now();
+            }
+        } catch {
+            // ignore
+        }
+
         emissionMintCache.diffSlot = currentDiffSlot;
         emissionMintCache.startTs = startTs;
         emissionMintCache.lastUpdatedMs = 0;
@@ -254,6 +305,13 @@ async function checkDifficultyAndSnapshot(force = false, options = {}) {
             await refreshLeaderboardCache(true);
         }
         snapshotLeaderboardForNewPeriod(currentDiffSlot);
+
+        // Refresh total catch since diff now that baselines exist
+        try {
+            if (leaderboardCache.data && Array.isArray(leaderboardCache.data.players)) {
+                refreshCatchSinceDiffTotalFromPlayers(leaderboardCache.data.players);
+            }
+        } catch {}
 
         // Refresh mint-based emission in background-ish (await here so the first request is correct)
         await refreshMintedSinceDiff(true);
@@ -1364,6 +1422,38 @@ app.post('/api/stats', async (req, res) => {
             }
             const mintedSinceDiff = await refreshMintedSinceDiff(false);
             emissionPrediction = calculateEmissionPrediction(globalState, mintedSinceDiff);
+            if (emissionPrediction) {
+                emissionPrediction.catchTodayTotal = catchSinceDiffCache.total;
+
+                // Old formula "Actual Emission Today": (Total Supply + Unprocessed) - (Period Start)
+                let actualEmissionToday = 0;
+                try {
+                    const mintedRaw = (globalState.total_fish_minted || '0').toString();
+                    const unprocessedRaw = (globalState.total_unprocessed_fish || '0').toString();
+                    const nowRaw = new BN(mintedRaw).add(new BN(unprocessedRaw));
+                    // Prefer on-chain period start snapshot from DifficultyTracker
+                    let baseRaw;
+                    if (difficultyTracker && difficultyTracker.period_start_fish_count !== undefined) {
+                        baseRaw = new BN((difficultyTracker.period_start_fish_count || '0').toString());
+                    } else {
+                        const baseRawStr = (difficultyPeriod.baselineSupplyPlusUnprocessedRaw || '0').toString();
+                        baseRaw = new BN(baseRawStr);
+                    }
+                    const diffRaw = nowRaw.sub(baseRaw);
+                    actualEmissionToday = bnRawToTokenNumber(diffRaw.isNeg() ? '0' : diffRaw.toString(), 6);
+                } catch {
+                    actualEmissionToday = 0;
+                }
+                emissionPrediction.actualEmissionToday = actualEmissionToday;
+
+                // Diff direction per metric (compare against daily target)
+                const dailyTarget = Number(emissionPrediction.dailyTarget) || 0;
+                const mintedVal = Number(emissionPrediction.totalFishMinted) || 0;
+                const catchVal = Number(emissionPrediction.catchTodayTotal) || 0;
+                emissionPrediction.mintedDiffDirection = mintedVal > dailyTarget ? 'up' : (mintedVal < dailyTarget ? 'down' : 'stable');
+                emissionPrediction.actualTodayDiffDirection = actualEmissionToday > dailyTarget ? 'up' : (actualEmissionToday < dailyTarget ? 'down' : 'stable');
+                emissionPrediction.catchDiffDirection = catchVal > dailyTarget ? 'up' : (catchVal < dailyTarget ? 'down' : 'stable');
+            }
         }
         
         // Calculate yield
@@ -1875,6 +1965,10 @@ async function refreshLeaderboardCache(force = false) {
         const data = await fetchLeaderboardData();
         leaderboardCache.data = data;
         leaderboardCache.lastUpdated = data.lastUpdated;
+        // Update total catch since diff (uses difficultySnapshot baselines)
+        try {
+            refreshCatchSinceDiffTotalFromPlayers(data.players);
+        } catch {}
         console.log(`[Leaderboard Cache] Refreshed at ${data.lastUpdated.toISOString()} — ${data.players.length} players`);
         return data;
     } catch (error) {
@@ -1926,7 +2020,8 @@ app.get('/api/leaderboard', async (req, res) => {
         res.json({
             players, // All players, sorted by unprocessed_fish descending
             lastUpdated: data.lastUpdated,
-            diffSlot: difficultySnapshot.diffSlot
+            diffSlot: difficultySnapshot.diffSlot,
+            catchTodayTotal: catchSinceDiffCache.total
         });
     } catch (error) {
         console.error('[Leaderboard] Error:', error);

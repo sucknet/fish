@@ -418,18 +418,21 @@
             
             <div class="emission-summary">
                 <div class="summary-card">
-                    <div class="summary-label">Actual 24h Emission</div>
-                    <div class="summary-value" id="actualEmission24h">-</div>
+                    <div class="summary-label">Minted Since Last Diff</div>
+                    <div class="summary-value" id="mintedSinceDiffTop">-</div>
                     <div class="summary-formula">Sum of mint transfers since last diff change</div>
+                    <div class="summary-status" id="mintedDiffStatus"></div>
                 </div>
                 <div class="summary-card">
-                    <div class="summary-label">Daily Target Emission</div>
-                    <div class="summary-value" id="dailyTargetEmission">-</div>
+                    <div class="summary-label">Actual Emission Today</div>
+                    <div class="summary-value" id="actualEmissionToday">-</div>
+                    <div class="summary-formula">Total Supply + Unprocessed - Period Start</div>
+                    <div class="summary-status" id="actualTodayDiffStatus"></div>
                 </div>
-                <div class="summary-card" id="difficultyCard">
-                    <div class="summary-label">Difficulty Prediction</div>
-                    <div class="summary-value" id="difficultyPrediction">-</div>
-                    <div class="summary-status" id="difficultyStatus"></div>
+                <div class="summary-card">
+                    <div class="summary-label">Catch Today Total</div>
+                    <div class="summary-value" id="catchTodayTotalTop">-</div>
+                    <div class="summary-status" id="catchDiffStatus"></div>
                 </div>
             </div>
             
@@ -441,12 +444,8 @@
                         <span class="detail-value" id="totalFishMinted">-</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">(Not used) Total Unprocessed Fish:</span>
-                        <span class="detail-value" id="totalUnprocessedFish">-</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">(Not used) Period Start Fish:</span>
-                        <span class="detail-value" id="periodStartFish">-</span>
+                        <span class="detail-label">Catch Today Total:</span>
+                        <span class="detail-value" id="catchTodayTotal">-</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Emission Difference:</span>

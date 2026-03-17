@@ -617,39 +617,51 @@ function displayEmissionPredictions(prediction) {
     
     // Section is always visible, just update the data
     
-    // Main emission data
-    document.getElementById('actualEmission24h').textContent = `${formatTokenAmount(prediction.actualEmission24h)} FISH`;
-    document.getElementById('dailyTargetEmission').textContent = `${formatTokenAmount(prediction.dailyTarget)} FISH`;
-    
-    // Difficulty prediction
-    const difficultyCard = document.getElementById('difficultyCard');
-    const difficultyPrediction = document.getElementById('difficultyPrediction');
-    const difficultyStatus = document.getElementById('difficultyStatus');
-    
-    if (prediction.difficultyPrediction === 'up') {
-        difficultyPrediction.textContent = '📈 DIFF WILL UP';
-        difficultyPrediction.className = 'summary-value difficulty-up';
-        difficultyStatus.textContent = `Emission is ${formatTokenAmount(Math.abs(prediction.emissionDiff))} FISH above target`;
-        difficultyStatus.className = 'summary-status status-up';
-        difficultyCard.style.borderColor = '#ef4444';
-    } else if (prediction.difficultyPrediction === 'down') {
-        difficultyPrediction.textContent = '📉 DIFF WILL DOWN';
-        difficultyPrediction.className = 'summary-value difficulty-down';
-        difficultyStatus.textContent = `Emission is ${formatTokenAmount(Math.abs(prediction.emissionDiff))} FISH below target`;
-        difficultyStatus.className = 'summary-status status-down';
-        difficultyCard.style.borderColor = '#10b981';
-    } else {
-        difficultyPrediction.textContent = '➡️ DIFF STABLE';
-        difficultyPrediction.className = 'summary-value difficulty-stable';
-        difficultyStatus.textContent = 'Emission matches target';
-        difficultyStatus.className = 'summary-status status-stable';
-        difficultyCard.style.borderColor = '#f59e0b';
+    // Top 3 cards
+    const mintedTopEl = document.getElementById('mintedSinceDiffTop');
+    if (mintedTopEl) {
+        mintedTopEl.textContent = `${formatTokenAmount(prediction.totalFishMinted)} FISH`;
     }
+
+    const actualTodayEl = document.getElementById('actualEmissionToday');
+    if (actualTodayEl) {
+        actualTodayEl.textContent = `${formatTokenAmount(prediction.actualEmissionToday)} FISH`;
+    }
+
+    const catchTodayTopEl = document.getElementById('catchTodayTotalTop');
+    if (catchTodayTopEl) {
+        catchTodayTopEl.textContent = `${formatTokenAmount(prediction.catchTodayTotal)} FISH`;
+    }
+
+    function applyDiffStatus(el, direction) {
+        if (!el) return;
+        if (direction === 'up') {
+            el.textContent = 'DIFF WILL UP';
+            el.className = 'summary-status status-up';
+        } else if (direction === 'down') {
+            el.textContent = 'DIFF WILL DOWN';
+            el.className = 'summary-status status-down';
+        } else {
+            el.textContent = 'DIFF STABLE';
+            el.className = 'summary-status status-stable';
+        }
+    }
+
+    // Diff direction per card (compare against daily target)
+    const dailyTarget = parseFloat(prediction.dailyTarget) || 0;
+    const mintedDir = prediction.mintedDiffDirection || ((parseFloat(prediction.totalFishMinted) || 0) > dailyTarget ? 'up' : ((parseFloat(prediction.totalFishMinted) || 0) < dailyTarget ? 'down' : 'stable'));
+    const actualTodayDir = prediction.actualTodayDiffDirection || ((parseFloat(prediction.actualEmissionToday) || 0) > dailyTarget ? 'up' : ((parseFloat(prediction.actualEmissionToday) || 0) < dailyTarget ? 'down' : 'stable'));
+    const catchDir = prediction.catchDiffDirection || ((parseFloat(prediction.catchTodayTotal) || 0) > dailyTarget ? 'up' : ((parseFloat(prediction.catchTodayTotal) || 0) < dailyTarget ? 'down' : 'stable'));
+    applyDiffStatus(document.getElementById('mintedDiffStatus'), mintedDir);
+    applyDiffStatus(document.getElementById('actualTodayDiffStatus'), actualTodayDir);
+    applyDiffStatus(document.getElementById('catchDiffStatus'), catchDir);
     
     // Details
     document.getElementById('totalFishMinted').textContent = `${formatTokenAmount(prediction.totalFishMinted)} FISH`;
-    document.getElementById('totalUnprocessedFish').textContent = `${formatTokenAmount(prediction.totalUnprocessedFish)} FISH`;
-    document.getElementById('periodStartFish').textContent = `${formatTokenAmount(prediction.periodStartFishCount)} FISH`;
+    const catchTodayEl = document.getElementById('catchTodayTotal');
+    if (catchTodayEl) {
+        catchTodayEl.textContent = `${formatTokenAmount(prediction.catchTodayTotal)} FISH`;
+    }
     
     const emissionDiffEl = document.getElementById('emissionDiff');
     const diffValue = prediction.emissionDiff;
@@ -751,6 +763,18 @@ async function displayRecentMints() {
         }
         
         const data = await response.json();
+
+        // Update Catch Today Total in Emission Details (leaderboard endpoint is guaranteed to warm up early)
+        if (typeof data.catchTodayTotal === 'number') {
+            const catchTodayEl = document.getElementById('catchTodayTotal');
+            if (catchTodayEl) {
+                catchTodayEl.textContent = `${formatTokenAmount(data.catchTodayTotal)} FISH`;
+            }
+            const catchTodayTopEl = document.getElementById('catchTodayTotalTop');
+            if (catchTodayTopEl) {
+                catchTodayTopEl.textContent = `${formatTokenAmount(data.catchTodayTotal)} FISH`;
+            }
+        }
         
         if (data.mints && data.mints.length > 0) {
             tbody.innerHTML = data.mints.map(mint => {
