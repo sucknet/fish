@@ -28,6 +28,9 @@ Thumbs.db
 # Browser profiles (tidak perlu di-deploy)
 browser_profiles/
 
+# Runtime snapshots
+difficulty-snapshot.json
+
 
 # Browser profiles (tidak perlu di-deploy)
 browser_profiles/

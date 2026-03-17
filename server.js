@@ -3,6 +3,7 @@ const cors = require('cors');
 const { Connection, PublicKey } = require('@solana/web3.js');
 const BN = require('bn.js');
 const path = require('path');
+const fs = require('fs');
 const https = require('https');
 const http = require('http');
 
@@ -53,6 +54,39 @@ let difficultySnapshot = {
     diffSlot: null,      // last_difficulty_adjustment slot string of current period
     baselines: {}        // { address: fish_caught_all_time raw string }
 };
+
+// Persist baselines so a server restart doesn't reset "catch since diff" back to 0.
+const DIFFICULTY_SNAPSHOT_PATH = path.join(__dirname, 'difficulty-snapshot.json');
+
+function loadDifficultySnapshotFromDisk() {
+    try {
+        if (!fs.existsSync(DIFFICULTY_SNAPSHOT_PATH)) return;
+        const parsed = JSON.parse(fs.readFileSync(DIFFICULTY_SNAPSHOT_PATH, 'utf8'));
+        if (!parsed || typeof parsed !== 'object') return;
+        const diffSlot = parsed.diffSlot ? parsed.diffSlot.toString() : null;
+        const baselines = (parsed.baselines && typeof parsed.baselines === 'object') ? parsed.baselines : {};
+        difficultySnapshot = { diffSlot, baselines };
+        // Also seed difficultyPeriod.diffSlot to prevent forced startup checks from overwriting baselines.
+        if (diffSlot) {
+            difficultyPeriod.diffSlot = diffSlot;
+        }
+        console.log(`[DifficultySnapshot] Loaded snapshot from disk — slot ${diffSlot}, ${Object.keys(baselines).length} baselines`);
+    } catch (e) {
+        console.warn('[DifficultySnapshot] Failed to load snapshot from disk:', e.message);
+    }
+}
+
+function saveDifficultySnapshotToDisk() {
+    try {
+        const payload = {
+            diffSlot: difficultySnapshot.diffSlot,
+            baselines: difficultySnapshot.baselines
+        };
+        fs.writeFileSync(DIFFICULTY_SNAPSHOT_PATH, JSON.stringify(payload));
+    } catch (e) {
+        console.warn('[DifficultySnapshot] Failed to save snapshot to disk:', e.message);
+    }
+}
 
 // Tracks difficulty period timing + emission (mint-based) cache
 let difficultyPeriod = {
@@ -127,7 +161,11 @@ function snapshotLeaderboardForNewPeriod(newDiffSlot) {
         console.log(`[DifficultySnapshot] New period (slot ${newDiffSlot}) — leaderboard cache empty, baselines will be set on first search`);
     }
     difficultySnapshot = newSnapshot;
+    saveDifficultySnapshotToDisk();
 }
+
+// Load persisted snapshot as early as possible
+loadDifficultySnapshotFromDisk();
 
 async function fetchGlobalStateInternal() {
     const [globalStatePDA] = await findPDA([Buffer.from('global-state')]);
@@ -300,11 +338,16 @@ async function checkDifficultyAndSnapshot(force = false, options = {}) {
         emissionMintCache.startTs = startTs;
         emissionMintCache.lastUpdatedMs = 0;
 
-        // Refresh leaderboard once for accurate baselines, then snapshot
+        // Refresh leaderboard once for accurate baselines, then snapshot.
+        // If we're forcing a check (startup) but diff didn't change and we already have baselines
+        // (loaded from disk), do NOT overwrite them.
+        const hasBaselines = difficultySnapshot && difficultySnapshot.diffSlot === currentDiffSlot && difficultySnapshot.baselines && Object.keys(difficultySnapshot.baselines).length > 0;
         if (options.refreshLeaderboard !== false) {
             await refreshLeaderboardCache(true);
         }
-        snapshotLeaderboardForNewPeriod(currentDiffSlot);
+        if (changed || !hasBaselines) {
+            snapshotLeaderboardForNewPeriod(currentDiffSlot);
+        }
 
         // Refresh total catch since diff now that baselines exist
         try {
